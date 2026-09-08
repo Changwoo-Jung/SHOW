@@ -149,7 +149,8 @@ plt.close()
 print(f"8. 유전자 덴드로그램 시각화 완료: [{file_name}] gene_dendrogram_nolabel.png")
 
 
-n_clusters = 6  gene_clusters = fcluster(Z_gene, t=n_clusters, criterion="maxclust")
+n_clusters = 6  
+gene_clusters = fcluster(Z_gene, t=n_clusters, criterion="maxclust")
 
 gene_cluster_df = pd.DataFrame({"gene": X_gene_z.index, "cluster": gene_clusters})
 
