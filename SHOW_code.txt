@@ -1,0 +1,576 @@
+import os
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import seaborn as sns
+import gseapy as gp
+from numpy.random import permutation
+from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import LabelEncoder
+from sklearn.cluster import AgglomerativeClustering
+from sklearn.cross_decomposition import PLSRegression
+from sklearn.model_selection import permutation_test_score
+from sklearn.pipeline import Pipeline
+from scipy.cluster.hierarchy import linkage, dendrogram, fcluster
+from scipy.spatial.distance import pdist
+
+
+file_name = "GDS3703.csv"
+treated_samples = [
+    "GSM396134", "GSM396148", "GSM396164", "GSM396135", "GSM396149",
+    "GSM396165", "GSM396136", "GSM396150", "GSM396166", "GSM396137",
+    "GSM396151", "GSM396167", "GSM396188", "GSM396208", "GSM396228", 
+    "GSM396193", "GSM396213", "GSM396233", "GSM396180", "GSM396184", 
+    "GSM396218", "GSM396195", "GSM396203", "GSM396223", "GSM396138", 
+    "GSM396152", "GSM396168", "GSM396139", "GSM396153", "GSM396169", 
+    "GSM396128", "GSM396154", "GSM396170", "GSM396129", "GSM396155", 
+    "GSM396171", "GSM396192", "GSM396212", "GSM396232", "GSM396179", 
+    "GSM396183", "GSM396217", "GSM396194", "GSM396202", "GSM396222", 
+    "GSM396199", "GSM396207", "GSM396227", "GSM396130", "GSM396156", 
+    "GSM396172", "GSM396131", "GSM396157", "GSM396173", "GSM396132", 
+    "GSM396158", "GSM396174", "GSM396133", "GSM396159", "GSM396175", 
+    "GSM396196", "GSM396204", "GSM396224", "GSM396189", "GSM396209", 
+    "GSM396229", "GSM396176", "GSM396214", "GSM396234", "GSM396181",
+    "GSM396185", "GSM396219"
+]
+control_samples = [
+    "GSM396140", "GSM396144", "GSM396160", "GSM396186", "GSM396200",
+    "GSM396220", "GSM396141", "GSM396145", "GSM396161", "GSM396197",
+    "GSM396205", "GSM396225", "GSM396142", "GSM396146", "GSM396162", 
+    "GSM396190", "GSM396210", "GSM396230", "GSM396143", "GSM396147", 
+    "GSM396163", "GSM396177", "GSM396215", "GSM396235"
+]
+
+# Sample subsets 2815
+# file_name = "GDS2815.csv"
+# treated_samples = [
+#     "GSM187968", "GSM187969", "GSM187970", "GSM187977", "GSM187978",
+#     "GSM187979", "GSM187986", "GSM187987", "GSM187988", "GSM187995",
+#     "GSM187996", "GSM187997", "GSM187971", "GSM187972", "GSM187973",
+#     "GSM187980", "GSM187981", "GSM187982", "GSM187989", "GSM187990",
+#     "GSM187991", "GSM187998", "GSM187999", "GSM188000"
+# ]
+# control_samples = [
+#     "GSM187965", "GSM187966", "GSM187967", "GSM187974", "GSM187975",
+#     "GSM187976", "GSM187983", "GSM187984", "GSM187985", "GSM187992",
+#     "GSM187993", "GSM187994"
+# ]
+
+# Sample subsets 1608
+# file_name = "GDS1608.csv"
+# treated_samples = [
+#     "GSM93817", "GSM93818", "GSM93819", "GSM93820", "GSM93821",
+#     "GSM93822", "GSM93823", "GSM93824", "GSM93829", "GSM93830",
+#     "GSM93831", "GSM93832", "GSM93833", "GSM93834", "GSM93835",
+#     "GSM93836", "GSM93841", "GSM93842", "GSM93843", "GSM93844",
+#     "GSM93845", "GSM93846", "GSM93847", "GSM93848", "GSM93852", 
+#     "GSM93853", "GSM93854", "GSM93855", "GSM93856", "GSM93857", 
+#     "GSM93861", "GSM93862", "GSM93863", "GSM93864", "GSM93865",
+#     "GSM93866", "GSM93870", "GSM93871", "GSM93872", "GSM93873",
+#     "GSM93874", "GSM93875"
+# ]
+# control_samples = [    
+#     "GSM93813", "GSM93814", "GSM93815", "GSM93816", "GSM93825",
+#     "GSM93826", "GSM93827", "GSM93828", "GSM93837", "GSM93838",
+#     "GSM93839", "GSM93840", "GSM93849", "GSM93850", "GSM93851",
+#     "GSM93858", "GSM93859", "GSM93860", "GSM93867", "GSM93868",
+#     "GSM93869"
+# ]
+
+
+
+expr = pd.read_csv(f"{file_name}", sep="\t", header=0, index_col=0)
+print(f"1. 파일 데이터 불러옴: {file_name}, shape: {expr.shape}")
+file_name = os.path.splitext(file_name)[0] 
+
+
+
+expr = expr.apply(pd.to_numeric, errors="coerce")
+
+expr = expr.dropna(axis=0, how="all")
+
+print(f"2. 데이터 클린업 shape: {expr.shape}")
+
+
+
+treated_samples = [s for s in treated_samples if s in expr.columns]
+control_samples = [s for s in control_samples if s in expr.columns]
+
+selected_samples = control_samples + treated_samples
+
+print(f"3. 총 사용 샘플 수: {len(selected_samples)} (control: {len(control_samples)}, treated: {len(treated_samples)})")
+
+expr_filtered = expr.loc[(expr > 2).sum(axis=1) >= 5] 
+
+print(f"4. Low-expression 유전자 제거 shape: {expr_filtered.shape}")
+
+expr_gene = (expr_filtered.groupby(expr_filtered.index).mean())
+
+print("5. 중복된 유전자 심볼은 평균값으로 병합")
+print(f"   병합전: {expr_filtered.shape}")
+print(f"   병합후: {expr_gene.shape}")
+
+
+
+top_n = 300   
+
+gene_var = expr_gene.var(axis=1)
+top_var_genes = (gene_var.sort_values(ascending=False).head(top_n).index)
+X_var = expr_gene.loc[top_var_genes, selected_samples]
+
+print("6. 분산 기반 상위 변이 유전자 선택")
+print("   선택된 유전자:", X_var.shape[0])
+print("   선택된 샘플:", X_var.shape[1])
+
+
+
+
+X_gene_z = X_var.sub(X_var.mean(axis=1), axis=0)\
+                .div(X_var.std(axis=1), axis=0)
+
+
+X_gene_z = X_gene_z.replace([np.inf, -np.inf], np.nan).dropna()
+
+print(f"7. 유전자별 Z-점수 정규화 shape: {X_gene_z.shape}")
+
+
+
+
+dist_gene = pdist(X_gene_z.values, metric="correlation")
+
+Z_gene = linkage(dist_gene, method="average")
+
+plt.figure(figsize=(6, 12))
+dendrogram(Z_gene, no_labels=True, orientation="right")
+plt.title("Gene hierarchical clustering")
+plt.tight_layout()
+plt.savefig(f"[{file_name}] gene_dendrogram_nolabel.png", dpi=300)
+plt.close()
+print(f"8. 유전자 덴드로그램 시각화 완료: [{file_name}] gene_dendrogram_nolabel.png")
+
+
+n_clusters = 6  gene_clusters = fcluster(Z_gene, t=n_clusters, criterion="maxclust")
+
+gene_cluster_df = pd.DataFrame({"gene": X_gene_z.index, "cluster": gene_clusters})
+
+cluster_summary = (gene_cluster_df.groupby("cluster").size().reset_index(name="n_genes").sort_values("n_genes", ascending=False))
+cluster_summary["ratio (%)"] = (cluster_summary["n_genes"] / cluster_summary["n_genes"].sum() * 100).round(1)
+
+print("9. 유전자 클러스터링 요약:")
+print(cluster_summary.to_string(index=False))
+
+
+plt.figure(figsize=(6, 4))
+sns.barplot(data=cluster_summary, x="cluster", y="n_genes", hue="cluster", palette="tab10", legend=False)
+plt.xlabel("Gene cluster")
+plt.ylabel("Number of genes")
+plt.title("Gene cluster size distribution")
+plt.tight_layout()
+plt.savefig(f"[{file_name}] gene_cluster_summary_barplot.png", dpi=300)
+plt.close()
+print(f"9. 클러스터 크기 시각화 완료: [{file_name}] gene_cluster_summary_barplot.png")
+
+
+
+min_genes = 20
+valid_clusters = cluster_summary.loc[cluster_summary["n_genes"] >= min_genes, "cluster"]
+
+print(f"10. 분석에 사용할 클러스터: {sorted(list(valid_clusters))} (최소 유전자 수: {min_genes})")
+
+
+cluster_expr = []
+
+for c in valid_clusters:
+    genes_c = gene_cluster_df.loc[gene_cluster_df["cluster"] == c, "gene"]
+    mean_expr = X_gene_z.loc[genes_c].mean(axis=0)
+    cluster_expr.append(mean_expr)
+
+cluster_expr_df = pd.DataFrame(cluster_expr, index=[f"Cluster_{c}" for c in valid_clusters], columns=selected_samples)
+
+print(f"11. 클러스터별 평균 발현 행렬 생성 shape: {cluster_expr_df.shape}")
+print(cluster_expr_df.head())
+
+
+
+cluster_expr_mean = pd.DataFrame({"Control": cluster_expr_df[control_samples].mean(axis=1), "Treated": cluster_expr_df[treated_samples].mean(axis=1)})
+
+plt.figure(figsize=(4, 6))
+sns.heatmap(cluster_expr_mean, cmap="vlag", center=0, annot=True, fmt=".2f", linewidths=0.5)
+plt.title("Cluster-wise mean expression\n(Control vs Treated)")
+plt.ylabel("Gene Cluster")
+plt.tight_layout()
+plt.savefig(f"[{file_name}] cluster_mean_expression_heatmap.png", dpi=300)
+plt.close()
+print(f"12. 클러스터 평균 발현 히트맵 시각화 완료: [{file_name}] cluster_mean_expression_heatmap.png")
+
+
+N_PERM = 10000       
+SEED = 42
+
+np.random.seed(SEED)
+rng = np.random.default_rng(SEED)
+
+def permutation_test(cluster_values, labels, n_perm=N_PERM, blocks=None):
+    labels = np.array(labels)
+    cluster_values = np.array(cluster_values, dtype=float)
+
+    if np.isnan(cluster_values).any():
+        return np.nan, np.nan, np.array([])
+
+    observed = (cluster_values[labels == "treated"].mean() - cluster_values[labels == "control"].mean())
+    perm_stats = np.empty(n_perm)
+    for i in range(n_perm):
+        if blocks is None:
+            perm_labels = rng.permutation(labels)
+        else:
+            perm_labels = labels.copy()
+            for b in pd.unique(blocks):
+                m = blocks == b
+                perm_labels[m] = rng.permutation(labels[m])
+        perm_stats[i] = (cluster_values[perm_labels == "treated"].mean() - cluster_values[perm_labels == "control"].mean())
+    r = int((np.abs(perm_stats) >= np.abs(observed)).sum())
+    p_value = (1 + r) / (1 + n_perm)
+    return observed, p_value, perm_stats
+
+def benjamini_hochberg(p):
+    p = np.asarray(p, dtype=float)
+    n = len(p)
+    q = np.empty(n)
+    prev = 1.0
+    for rank, i in enumerate(np.argsort(p)[::-1]):
+        prev = min(prev, p[i] * n / (n - rank))
+        q[i] = prev
+    return q
+
+def load_strata(soft_path, subset_type):
+    if not os.path.exists(soft_path):
+        print(f"    [주의] {soft_path} 없음 -> 계층 비교 생략")
+        return None
+    import gzip
+    mapping, cur = {}, {}
+    with gzip.open(soft_path, "rt", errors="ignore") as fh:
+        for line in fh:
+            if line.startswith("^SUBSET"):
+                cur = {}
+            elif line.startswith("!subset_description"):
+                cur["desc"] = line.split("=", 1)[1].strip()
+            elif line.startswith("!subset_sample_id"):
+                cur["ids"] = [s.strip() for s in line.split("=", 1)[1].split(",")]
+            elif line.startswith("!subset_type"):
+                if line.split("=", 1)[1].strip() == subset_type:
+                    for s in cur["ids"]:
+                        mapping[s] = cur["desc"]
+            elif line.startswith("!dataset_table_begin"):
+                break
+    return mapping or None
+
+
+labels = ["control" if s in control_samples else "treated" for s in cluster_expr_df.columns]
+
+
+STRATUM_TYPE = {"GDS1608": "tissue", "GDS2815": "strain", "GDS3703": "time"}.get(file_name, "time")
+strata_map = load_strata(f"{file_name}.soft.gz", STRATUM_TYPE)
+blocks = (np.array([strata_map.get(s, "NA") for s in cluster_expr_df.columns]) if strata_map else None)
+cluster_stats = []
+null_dists = {}
+
+for cluster in cluster_expr_df.index:
+    values = cluster_expr_df.loc[cluster].values
+    obs, pval, perm_stats = permutation_test(values, labels, blocks=None)
+    n_genes_c = int((gene_cluster_df["cluster"] == int(cluster.split("_")[1])).sum())
+    row = {"cluster": cluster, "n_genes": n_genes_c,
+           "delta_mean (T-C)": obs, "p_value": pval,
+           "r": int((np.abs(perm_stats) >= abs(obs)).sum()) if len(perm_stats) else np.nan,
+           "n_perm": N_PERM,
+           "abs_percentile": (float((np.abs(perm_stats) < abs(obs)).mean() * 100) if len(perm_stats) else np.nan),
+           "null_sd": perm_stats.std() if len(perm_stats) else np.nan}
+    null_dists[f"{cluster}"] = perm_stats
+
+    if blocks is not None:
+        _, p_strat, strat_stats = permutation_test(values, labels, blocks=blocks)
+        row["p_value_within_stratum"] = p_strat
+        row["null_sd_within_stratum"] = strat_stats.std()
+        row["null_sd_ratio"] = row["null_sd"] / strat_stats.std()
+        null_dists[f"{cluster}__strat"] = strat_stats
+    cluster_stats.append(row)
+cluster_de_df = pd.DataFrame(cluster_stats)
+cluster_de_df["q_value (BH)"] = benjamini_hochberg(cluster_de_df["p_value"].values)
+cluster_de_df = cluster_de_df.sort_values("p_value").reset_index(drop=True)
+
+print(f"13. 클러스터별 퍼뮤테이션 결과 (n_perm={N_PERM}, p=(1+r)/(1+n), BH 보정)")
+print(cluster_de_df.to_string(index=False))
+if blocks is not None:
+    ratio = cluster_de_df["null_sd_ratio"]
+    print(f"    귀무분포 SD 비율(자유÷층화) 중앙값 {ratio.median():.2f}, 최대 {ratio.max():.2f}  -> 1보다 크면 자유 퍼뮤테이션이 보수적")
+
+cluster_de_df.to_csv(f"[{file_name}] cluster_level_DE.csv", index=False)
+
+
+
+OUT_DIR = "permutation"
+os.makedirs(OUT_DIR, exist_ok=True)
+
+DESIGN_LABEL = {
+    "GDS1608": ("cocaine", "rat", "brain region"),
+    "GDS2815": ("morphine", "mouse", "strain"),
+    "GDS3703": ("six drugs", "mouse", "timepoint"),
+}
+drug, organism, stratum_name = DESIGN_LABEL.get( file_name, ("treated", "sample", STRATUM_TYPE))
+n_ctl, n_trt = len(control_samples), len(treated_samples)
+ctl_word = "control" if file_name == "GDS1608" else "saline"
+if file_name == "GDS3703":
+    design_line = f"{n_ctl} saline vs {n_trt} drug-treated  ({organism}, six drugs)"
+else:
+    design_line = f"{n_ctl} {ctl_word} vs {n_trt} {drug}-treated  ({organism})"
+n_strata = len(set(strata_map.values())) if strata_map else 0
+
+ann_rows = []
+for cluster in cluster_expr_df.index:
+    free = null_dists.get(f"{cluster}")
+    if free is None or not len(free):
+        continue
+    row = cluster_de_df.loc[cluster_de_df.cluster == cluster].iloc[0]
+    observe = row["delta_mean (T-C)"]
+    strat = null_dists.get(f"{cluster}__strat")
+
+    lim = max(np.abs(free).max(), abs(observe)) * 1.10
+    bins = np.linspace(-lim, lim, 61)
+
+    fig, ax = plt.subplots(figsize=(3.5, 2.5))
+    ax.hist(free, bins=bins, color="#c8c8c8", edgecolor="white", linewidth=0.3)
+    ax.axvline(observe, color="#1a1a1a", linewidth=1.8, zorder=5)
+    ax.axvline(-observe, color="#1a1a1a", linewidth=0.9, linestyle=(0, (2.5, 2.5)), alpha=0.7, zorder=5)
+    ax.set_title(f"{file_name} - {cluster} - {int(row['n_genes'])} genes\n{design_line}", fontsize=7.2, color="#1a1a1a", pad=6, linespacing=1.5)
+    ax.set_xlabel("Δmean under permutation  (SD units)", fontsize=7.4)
+    ax.set_ylabel("permutations", fontsize=7.4)
+    ax.set_xlim(-lim, lim)
+    ax.tick_params(labelsize=6.6, length=2.5)
+    for side in ("left", "top", "right"):
+        ax.spines[side].set_visible(False)
+    ax.grid(axis="y", linewidth=0.4, alpha=0.30)
+    fig.tight_layout()
+    fig.savefig(os.path.join(OUT_DIR, f"[{file_name}] Permutation_{cluster}.png"), dpi=400)
+    plt.close(fig)
+
+    ann_rows.append({
+        "figure": f"[{file_name}] Permutation_{cluster}",
+        "dataset": file_name, "cluster": cluster,
+        "n_genes": int(row["n_genes"]),
+        "n_control": n_ctl, "n_treated": n_trt,
+        "stratum": stratum_name, "n_strata": n_strata,
+        "delta": observe,
+        "r": int(row["r"]), "n_perm": int(row["n_perm"]),
+        "p": row["p_value"], "q": row["q_value (BH)"],
+        "pct": row["abs_percentile"],
+        "sd_free": row["null_sd"],
+        "sd_strat": row.get("null_sd_within_stratum", np.nan),
+        "ratio": row.get("null_sd_ratio", np.nan),
+        "sig": bool(row["q_value (BH)"] < 0.05),
+    })
+
+pd.DataFrame(ann_rows).to_csv(
+    os.path.join(OUT_DIR, f"annotation_values_{file_name}.csv"), index=False)
+print(f"13-1. 귀무분포 그림 {len(ann_rows)}장 + annotation_values_{file_name}.csv 저장 -> {OUT_DIR}/")
+
+
+top_k = 2 
+target_clusters = cluster_de_df.head(top_k)["cluster"].tolist()
+
+print(f"14. 선택된 주요 클러스터 (|Δmean| 상위 {top_k}개): {target_clusters}")
+
+
+heatmap_data = cluster_expr_df.loc[target_clusters]
+
+sample_group = (["control"] * len(control_samples) + ["treated"] * len(treated_samples))
+col_colors = pd.Series(sample_group, index=selected_samples).map({"control": "#4C72B0", "treated": "#DD8452"})
+plt.figure(figsize=(10, 4))
+sns.clustermap(heatmap_data, col_cluster=True, row_cluster=False, cmap="vlag", col_colors=col_colors, standard_scale=None)
+plt.savefig(f"[{file_name}] marker_cluster_heatmap.png", dpi=300)
+plt.close()
+print(f"15-1. 마커 클러스터 heatmap 저장 완료: [{file_name}] marker_cluster_heatmap.png")
+
+plot_df = []
+
+for cluster in target_clusters:
+    for sample in selected_samples:
+        plot_df.append({"cluster": cluster, "expression": cluster_expr_df.loc[cluster, sample], "group": "control" if sample in control_samples else "treated"})
+
+plot_df = pd.DataFrame(plot_df)
+plt.figure(figsize=(6, 4))
+sns.boxplot(data=plot_df, x="cluster", y="expression", hue="group", palette={"control": "#4C72B0", "treated": "#DD8452"})
+plt.axhline(0, color="gray", linestyle="--", linewidth=1)
+plt.title("Marker cluster expression (Control vs Treated)")
+plt.tight_layout()
+plt.savefig(f"[{file_name}] marker_cluster_boxplot.png", dpi=300)
+plt.close()
+print(f"15-2. 마커 클러스터 boxplot 저장 완료: [{file_name}] marker_cluster_boxplot.png")
+
+marker_gene_tables = {}
+
+for cluster in target_clusters:
+    genes = gene_cluster_df.loc[gene_cluster_df["cluster"] == int(cluster.split("_")[1]), "gene"].unique()
+    marker_gene_tables[cluster] = genes
+
+    pd.Series(genes, name="gene").to_csv(f"[{file_name}] {cluster}_marker_genes.csv", index=False)
+    print(f"15-3. {cluster}: {len(genes)} genes 마커 유전자 리스트 저장 완료: [{file_name}] {cluster}_marker_genes.csv")
+
+
+
+for cluster in target_clusters:
+    cluster_id = int(cluster.split("_")[1])
+
+    genes = gene_cluster_df.loc[gene_cluster_df["cluster"] == cluster_id, "gene"].unique()
+    X_cluster_genes = X_gene_z.loc[X_gene_z.index.isin(genes)]
+    print(f"{cluster}: gene expression matrix shape = {X_cluster_genes.shape}")
+
+    plt.figure(figsize=(8, 10))
+    sns.clustermap(X_cluster_genes, col_cluster=True, row_cluster=True, cmap="vlag", xticklabels=False, yticklabels=False)
+    plt.savefig(f"[{file_name}] {cluster}_gene_level_heatmap.png", dpi=300)
+    plt.close()
+
+    print(f"16-1. {cluster} gene-level heatmap 저장 완료")
+
+gene_stats = []
+
+for cluster in target_clusters:
+    cluster_id = int(cluster.split("_")[1])
+
+    if "gene" in gene_cluster_df.columns:
+        genes = gene_cluster_df.loc[gene_cluster_df["cluster"] == cluster_id, "gene"].unique()
+    else:
+        genes = gene_cluster_df.index[gene_cluster_df["cluster"] == cluster_id].unique()
+
+    for gene in genes:
+        if gene not in X_gene_z.index:
+            continue
+
+        expr = X_gene_z.loc[gene]
+        delta = (expr[treated_samples].mean() - expr[control_samples].mean())
+        gene_stats.append({"cluster": cluster, "gene": gene, "delta_mean (T-C)": delta})
+
+gene_effect_df = pd.DataFrame(gene_stats)
+
+print("유효 gene 수:", gene_effect_df["cluster"].value_counts())
+
+gene_effect_df = gene_effect_df.sort_values("delta_mean (T-C)", key=np.abs, ascending=False)
+top_n_genes = 20
+
+for cluster in target_clusters:
+    top_genes = (gene_effect_df.query("cluster == @cluster").head(top_n_genes))
+
+    print(f"\n{cluster} Top {top_n_genes} marker genes:")
+    print(top_genes[["gene", "delta_mean (T-C)"]])
+
+    top_genes.to_csv(f"[{file_name}] {cluster}_top_marker_genes.csv", index=False)
+
+print("16-2. 클러스터별 효과 크기 계산 완료")
+
+
+background_genes = expr_filtered.index.unique().tolist()
+print(f"Background genes: {len(background_genes)}")
+
+go_results = {}
+for cluster in target_clusters:
+    genes = (gene_effect_df.query("cluster == @cluster").head(50)["gene"].unique().tolist()) 
+
+    print(f"{cluster}: GO enrichment genes = {len(genes)}")
+
+    enr = gp.enrichr(gene_list=genes, gene_sets="GO_Biological_Process_2021", background=background_genes, organism="mus musculus", outdir=None, cutoff=0.05)
+    go_results[cluster] = enr.results
+    enr.results.to_csv(f"[{file_name}] {cluster}_GO_enrichment.csv", index=False)
+
+for cluster, df in go_results.items():
+    if df is None or df.empty:
+        continue
+
+    top_df = df.sort_values("Adjusted P-value").head(10)
+
+    plt.figure(figsize=(8, 4)) 
+    sns.barplot(data=top_df, x=-np.log10(top_df["Adjusted P-value"]), y="Term")
+    plt.xlabel("-log10(adj p-value)")
+    plt.ylabel("GO Biological Process")
+    plt.title(f"{cluster} GO enrichment")
+    plt.savefig(f"[{file_name}] {cluster}_GO_barplot.png", dpi=300, bbox_inches="tight")
+    plt.close()
+
+    print(f"17. {cluster} GO barplot 저장 완료")
+
+gene_stats = []
+
+for gene in X_gene_z.index:
+    values = X_gene_z.loc[gene, selected_samples].values
+
+    treated_vals = values[len(control_samples):]
+    control_vals = values[:len(control_samples)]
+
+    delta = treated_vals.mean() - control_vals.mean()
+
+    gene_stats.append({"gene": gene, "delta_mean (T-C)": delta})
+
+gene_effect_df = pd.DataFrame(gene_stats)
+print("18-1. 유전자별 효과 크기 계산 완료")
+
+gene_effect_df = gene_effect_df.merge(gene_cluster_df, on="gene", how="left")
+print(gene_effect_df.head())
+
+gene_effect_df = gene_effect_df[gene_effect_df["cluster"].isin(target_clusters)]
+print("18-2. Marker 후보 유전자 수:", gene_effect_df.shape[0])
+
+
+cluster_direction = (cluster_de_df.drop_duplicates("cluster").set_index("cluster")["delta_mean (T-C)"].apply(np.sign)) 
+
+gene_effect_df = gene_effect_df.copy()
+gene_effect_df["gene_direction"] = np.sign(gene_effect_df["delta_mean (T-C)"])
+
+gene_effect_df["cluster_direction"] = (gene_effect_df["cluster"].map(cluster_direction))
+
+gene_effect_df = gene_effect_df.dropna(subset=["cluster_direction"])
+
+gene_effect_df = gene_effect_df[(gene_effect_df["gene_direction"] != 0) & (gene_effect_df["cluster_direction"] != 0)]
+
+gene_effect_df["direction_match"] = (gene_effect_df["gene_direction"] == gene_effect_df["cluster_direction"])
+
+gene_effect_df = gene_effect_df[gene_effect_df["direction_match"]]
+
+print("18-3. 방향성 일치 marker 후보:", gene_effect_df.shape[0])
+
+plt.figure(figsize=(5,4))
+sns.barplot(data=cluster_de_df, x="cluster", y="delta_mean (T-C)")
+plt.axhline(0, linestyle="--", color="gray")
+plt.ylabel("Mean expression difference (Treated − Control)")
+plt.xlabel("Gene cluster")
+plt.title("Cluster-level expression shifts")
+plt.tight_layout()
+plt.savefig(f"[{file_name}] cluster_effect_barplot.png", dpi=300)
+plt.close()
+
+print("18-4. Cluster effect barplot 저장 완료")
+
+plt.figure(figsize=(10,6))
+sns.heatmap(cluster_expr_df, cmap="vlag", center=0, xticklabels=False)
+plt.ylabel("Gene cluster")
+plt.title("Mean expression profile per cluster")
+plt.tight_layout()
+plt.savefig(f"[{file_name}] cluster_mean_heatmap.png", dpi=300)
+plt.close()
+
+print("18-5. Cluster mean heatmap 저장 완료")
+
+
+top_genes["cluster"] = top_genes["cluster"].astype(str)
+
+plt.figure(figsize=(6,6))
+ax = sns.scatterplot(data=top_genes, x="delta_mean (T-C)", y="gene", hue="cluster", palette="tab10")
+
+plt.axvline(0, linestyle="--", color="gray")
+plt.xlabel("Δmean (Treated − Control)")
+plt.ylabel("Gene")
+plt.title("Top genes by effect size")
+
+ax.legend(title=None)
+
+plt.tight_layout()
+plt.savefig(f"[{file_name}] top_gene_effects.png", dpi=300)
+plt.close()
+
+print("18-6. Gene effect size plot 저장 완료")
